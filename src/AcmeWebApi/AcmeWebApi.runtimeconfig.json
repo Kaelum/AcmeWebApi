@@ -1,0 +1,22 @@
+{
+	"runtimeOptions": {
+
+		"configProperties": {
+			"System.GC.Server": true,
+			"System.GC.Concurrent": true,
+			"System.Threading.ThreadPool.MinThreads": 5000,
+			"System.Threading.ThreadPool.MaxThreads": 500000,
+			"HillClimbing_Bias": 0,
+			"HillClimbing_GainExponent": 1000,
+			"HillClimbing_MaxChangePerSample": 5000,
+			"HillClimbing_MaxChangePerSecond":  1000
+		},
+
+		"framework-": {
+			"name": "Microsoft.DotNetCore",
+			"version": "1.0.1"
+		},
+
+		"applyPatches-": false
+	}
+}

@@ -1,0 +1,11 @@
+{
+	"msbuild-sdks-": {
+		"Microsoft.NET.Sdk": "2.2.0",
+		"Microsoft.NET.Sdk.WindowsDesktop": "latest",
+		"Service.Sdk": "5.0.0",
+		"Client.Sdk": "1.0.0-beta"
+	},
+	"sdk": {
+		"version": "3.1.301"
+	}
+}
