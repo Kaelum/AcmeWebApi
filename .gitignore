@@ -261,5 +261,5 @@ __pycache__/
 *.pyc
 
 /src/.packages
-/src/AcmeWebApi/.publish
+/src/.publish
 /src/AcmeWebApi/AcmeWebApi.xml

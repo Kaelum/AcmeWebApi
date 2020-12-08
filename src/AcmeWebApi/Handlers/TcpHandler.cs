@@ -33,8 +33,6 @@ namespace WebApplication
 		private const int MAX_REQUEST_OVERHEAD_SIZE = 2048;
 		private const int MAX_URI_SIZE = 2048;
 
-		private const string IGNORE_EXCEPTION_MESSAGE_1 = "Writing is not allowed after writer was completed.";
-
 		private const string HTTP_RESPONSE_FORMAT = "HTTP/1.1 {0} {1}\r\nContent-Type: {2}\r\nContent-Length: {3}\r\nServer: acme.com\r\nConnection: Keep-Alive\r\n\r\n";
 
 		private static readonly byte[] _proxyHeaderBeginBytes = Encoding.UTF8.GetBytes(PROXY_HEADER_BEGIN);
@@ -78,20 +76,36 @@ namespace WebApplication
 			public SequencePosition Position { get; set; }
 		}
 
-		private class RequestBuffer
+		private class TcpRequest
 		{
-			public RequestBuffer(
-				byte[] buffer,
-				bool isHttpRequest
+			public TcpRequest(
+				bool isHttpRequest,
+				byte[] request
 			)
 			{
-				Buffer = buffer;
+				Request = request;
 				IsHttpRequest = isHttpRequest;
 			}
 
 			public bool IsHttpRequest { get; set; }
 
-			public byte[] Buffer { get; set; }
+			public byte[] Request { get; set; }
+		}
+
+		private class TcpResponse
+		{
+			public TcpResponse(
+				byte[]? header,
+				byte[] body
+			)
+			{
+				Body = body;
+				Header = header;
+			}
+
+			public byte[] Body { get; set; }
+
+			public byte[]? Header { get; set; }
 		}
 
 
@@ -130,22 +144,23 @@ namespace WebApplication
 		/// <returns></returns>
 		public override async Task OnConnectedAsync(ConnectionContext connection)
 		{
-			_logger.LogInformation(connection.ConnectionId + " connected");
+			_logger.LogInformation("{0} connected", connection.ConnectionId);
 
+			CancellationTokenSource requestTimeoutToken;
 			CancellationToken closedToken = connection.ConnectionClosed;
 			PipeReader reader = connection.Transport.Input;
 			PipeWriter writer = connection.Transport.Output;
 			IPEndPoint localIpEndPoint = (IPEndPoint)connection.LocalEndPoint;
+			IPEndPoint remoteIpEndPoint = (IPEndPoint)connection.RemoteEndPoint;
+
+			IPAddress remoteIpAddress = remoteIpEndPoint.Address;
 			int localPort = localIpEndPoint.Port;
 			int proxyPort = localPort;
-			IPEndPoint remoteIpEndPoint = (IPEndPoint)connection.RemoteEndPoint;
-			IPAddress remoteIpAddress = remoteIpEndPoint.Address;
 			string serviceType = GetServiceType(localPort, proxyPort);
 
 
 			try
 			{
-				ReadResult readResult;
 				ReadBufferResult readBufferResult;
 				long blockCounter = 0;
 
@@ -379,49 +394,10 @@ namespace WebApplication
 					return null;
 				}
 
-				void processRequestBuffer(RequestBuffer requestBuffer)
-				{
-					Task<AcmeRequest?> createAcmeRequestAsync(string serviceType, IPAddress remoteIpAddress)
-					{
-						string xmlPayloadString = Encoding.UTF8.GetString(requestBuffer.Buffer);
+				ReadResult readResult;
+				byte[] buffer = new byte[_maxRequestSize];
 
-						return Task.FromResult(_acmeSerialization.CreatePostRequest(
-							serviceType,
-							remoteIpAddress,
-							xmlPayloadString
-						));
-					}
-
-					async Task sendResponseAsync(HttpResult httpResult)
-					{
-						try
-						{
-							if (closedToken.IsCancellationRequested)
-							{
-								return;
-							}
-
-							await SendResponseAsync(writer, httpResult, requestBuffer.IsHttpRequest, closedToken);
-						}
-						catch (InvalidOperationException ex) when (IGNORE_EXCEPTION_MESSAGE_1.Equals(ex.Message, StringComparison.InvariantCultureIgnoreCase))
-						{
-#if DEBUG
-							_logger.LogWarning("{0} (closed: {1})", ex.Message, closedToken.IsCancellationRequested);
-#endif
-							return;
-						}
-					}
-
-					Task.Run(() => _apiProcessor.ProcessRequestAsync(
-						serviceType,
-						remoteIpAddress,
-						createAcmeRequestAsync,
-						sendResponseAsync
-					)).Wait();
-				}
-
-				using (Timer timeoutTimer = new Timer((stateInfo) => { connection.Abort(new ConnectionAbortedException("Connection timeout.")); }, null, Timeout.Infinite, Timeout.Infinite))
-				using (MemoryStream bufferStream = new MemoryStream(new byte[_maxRequestSize], true))
+				using (MemoryStream bufferStream = new MemoryStream(buffer, true))
 				{
 					bufferStream.SetLength(0L);
 
@@ -429,15 +405,28 @@ namespace WebApplication
 					{
 						try
 						{
-							timeoutTimer.Change(_connectionTimeout, Timeout.Infinite);
+							requestTimeoutToken = new CancellationTokenSource(_connectionTimeout);
 
-							try { readResult = await reader.ReadAsync(closedToken); }
+							try
+							{
+								readResult = await reader.ReadAsync(
+									requestTimeoutToken.Token
+								);
+
+								if (readResult.IsCanceled)
+								{
+									connection.Abort();
+									break;
+								}
+								else if (readResult.IsCompleted)
+								{
+									break;
+								}
+							}
 							catch (ConnectionResetException) { break; }
 							catch (ConnectionAbortedException) { break; }
 							catch (SocketException) { break; }
 							catch (OperationCanceledException) { break; }
-
-							if (readResult.IsCompleted) { break; }
 
 							//SequencePosition? newPosition
 							ReadBufferResult? readPosition = parseReadBuffer(bufferStream, readResult.Buffer);
@@ -445,22 +434,9 @@ namespace WebApplication
 
 							if (readPosition == null) { continue; }
 
-							bufferStream.Seek(0L, SeekOrigin.Begin);
-
-							RequestBuffer requestBuffer = new RequestBuffer(
-								new byte[bufferStream.Length],
-								readPosition.IsHttpRequest
-							);
-							int readCount = await bufferStream.ReadAsync(requestBuffer.Buffer);
-
-							if (readCount != bufferStream.Length)
-							{
-								throw new InvalidOperationException($"Read count does not match buffer length. ({readCount} != {bufferStream.Length})");
-							}
-
 							if (readPosition.IsProxyProtocolheader)
 							{
-								string proxyHeader = Encoding.ASCII.GetString(requestBuffer.Buffer);
+								string proxyHeader = Encoding.ASCII.GetString(buffer, 0, (int)bufferStream.Length);
 								Match match = _proxyHeaderRegex.Match(proxyHeader);
 
 								if (!match.Success)
@@ -492,63 +468,80 @@ namespace WebApplication
 							}
 							else
 							{
-								ThreadPool.QueueUserWorkItem(processRequestBuffer, requestBuffer, false);
+								Task<AcmeRequest?> createAcmeRequestAsync(string serviceType, IPAddress remoteIpAddress)
+								{
+									string xmlPayloadString = Encoding.UTF8.GetString(buffer, 0, (int)bufferStream.Length);
+
+									return Task.FromResult(_acmeSerialization.CreatePostRequest(
+										serviceType,
+										remoteIpAddress,
+										xmlPayloadString
+									));
+								}
+
+								async Task sendResponseAsync(HttpResult httpResult)
+								{
+									await SendResponseAsync(
+										writer,
+										httpResult,
+										readPosition.IsHttpRequest,
+										closedToken
+									);
+								}
+
+								ProcessResult result = await _apiProcessor.ProcessRequestAsync(
+									serviceType,
+									remoteIpAddress,
+									createAcmeRequestAsync,
+									sendResponseAsync
+								);
 							}
 
 							bufferStream.Seek(0L, SeekOrigin.Begin);
 							bufferStream.SetLength(0);
 						}
-						catch (Exception ex)
+						catch (AcmeException ex)
 						{
-							_logger.LogError(ex, "Failure processing PipeReader.");
+							ErrorResult errorResult = new ErrorResult(
+								ex.SeqNum,
+								ex.Authorization,
+								ex.RawMethod,
+								new XmlAcmeResponseError(
+									ex,
+									ex.StatusCode
+								)
+							);
+
+							_logger.LogError(ex, "{0}.  [Client:{1}]", ex.Message, remoteIpAddress.ToString());
+
+							await SendResponseAsync(
+								writer,
+								errorResult,
+								true,
+								closedToken
+							);
 						}
 					}
 				}
 			}
+			catch (ConnectionAbortedException) { }
 			catch (Exception ex)
 			{
+				connection.Abort();
+
 				try
 				{
-					int? seqNum;
-					AcmeAuthorization? authorization;
-					string? rawMethod;
-					AcmeStatusCode acmeStatusCode;
-
-					if (ex is AcmeException acmeException)
-					{
-						seqNum = acmeException.SeqNum;
-						authorization = acmeException.Authorization;
-						rawMethod = acmeException.RawMethod;
-						acmeStatusCode = acmeException.StatusCode;
-					}
-					else
-					{
-						seqNum = null;
-						authorization = null;
-						rawMethod = null;
-						acmeStatusCode = AcmeStatusCode.InternalServerError;
-					}
-
 					ErrorResult errorResult = new ErrorResult(
-						seqNum,
-						authorization,
-						rawMethod,
+						null,
+						null,
+						null,
 						new XmlAcmeResponseError(
 							ex,
-							acmeStatusCode
+							AcmeStatusCode.InternalServerError
 						)
 					);
 
 					_logger.LogError(ex, "{0}.  [Client:{1}]", ex.Message, remoteIpAddress.ToString());
-
-					await SendResponseAsync(writer, errorResult, false, closedToken);
-				}
-				catch (InvalidOperationException ex2) when (IGNORE_EXCEPTION_MESSAGE_1.Equals(ex2.Message, StringComparison.InvariantCultureIgnoreCase))
-				{
-					// Do nothing, the connection is closed and nothing needs to be done.
-#if DEBUG
-					_logger.LogWarning("{0} (closed: {1})", ex.Message, closedToken.IsCancellationRequested);
-#endif
 				}
 				catch (Exception ex2)
 				{
@@ -556,7 +549,7 @@ namespace WebApplication
 				}
 			}
 
-			_logger.LogInformation(connection.ConnectionId + " disconnected");
+			_logger.LogInformation("{0} disconnected", connection.ConnectionId);
 		}
 
 		#region Private Methods
@@ -575,79 +568,103 @@ namespace WebApplication
 #endif
 		}
 
-		/// <summary>
-		///		Create a response for the specified <see cref="T:HttpResult"/> asynchronously.
-		/// </summary>
-		/// <param name="writer"></param>
-		/// <param name="httpResult"></param>
-		/// <param name="isHttpRequest"></param>
-		/// <param name="closedToken"></param>
-		/// <returns></returns>
 		private async Task SendResponseAsync(
 			PipeWriter writer,
 			HttpResult httpResult,
-			bool isHttpRequest,
+			bool sendHttpheader,
 			CancellationToken closedToken
 		)
 		{
-			if (closedToken.IsCancellationRequested)
+			try
 			{
-				return;
-			}
-
-			int totalBytes;
-			Memory<byte> outputMemory;
-
-			if (isHttpRequest)
-			{
-				string httpResponseHeader = string.Format(
-					HTTP_RESPONSE_FORMAT,
-					httpResult.HttpStatusCode.ToString("D"),
-					HttpStatusDescription.Get(httpResult.HttpStatusCode),
-					httpResult.ContentType,
-					httpResult.Response.Length
-				);
-
-				byte[] httpResponseHeaderBytes = Encoding.UTF8.GetBytes(httpResponseHeader);
-				totalBytes = httpResult.Response.Length + httpResponseHeaderBytes.Length;
+				TcpResponse tcpResponse;
 
 				if (closedToken.IsCancellationRequested)
 				{
 					return;
 				}
 
-				outputMemory = writer.GetMemory(totalBytes);
-				httpResponseHeaderBytes.CopyTo(outputMemory);
-				httpResult.Response.CopyTo(outputMemory.Slice(httpResponseHeaderBytes.Length));
-			}
-			else
-			{
-				totalBytes = httpResult.Response.Length;
+				if (sendHttpheader)
+				{
+					string httpResponseHeader = string.Format(
+						HTTP_RESPONSE_FORMAT,
+						httpResult.HttpStatusCode.ToString("D"),
+						HttpStatusDescription.Get(httpResult.HttpStatusCode),
+						httpResult.ContentType,
+						httpResult.Response.Length
+					);
+
+					tcpResponse = new TcpResponse(
+						Encoding.UTF8.GetBytes(httpResponseHeader),
+						httpResult.Response
+					);
+				}
+				else
+				{
+					tcpResponse = new TcpResponse(
+						null,
+						httpResult.Response
+					);
+				}
 
 				if (closedToken.IsCancellationRequested)
 				{
 					return;
 				}
 
-				outputMemory = writer.GetMemory(totalBytes);
-				httpResult.Response.CopyTo(outputMemory);
-			}
+				int totalBytes = (tcpResponse.Header?.Length ?? 0) + tcpResponse.Body.Length;
+				Memory<byte> responseMemory;
 
-			if (closedToken.IsCancellationRequested)
-			{
-				return;
-			}
+				try
+				{
+					responseMemory = writer.GetMemory(totalBytes);
+				}
+				catch (InvalidOperationException ex) when ("Writing is not allowed after writer was completed.".Equals(ex.Message, StringComparison.InvariantCultureIgnoreCase))
+				{
+#if DEBUG
+					_logger.LogWarning("{0} (closed: {1})", ex.Message, closedToken.IsCancellationRequested);
+#endif
+					return;
+				}
 
-			writer.Advance(totalBytes);
-			await writer.FlushAsync();
+				if (responseMemory.Length < totalBytes)
+				{
+					throw new InvalidOperationException($"The memory buffer ({responseMemory.Length}) is smaller than the requested size ({totalBytes}).");
+				}
+
+				if (tcpResponse.Header != null)
+				{
+					tcpResponse.Header.CopyTo(responseMemory);
+					responseMemory = responseMemory.Slice(tcpResponse.Header.Length);
+				}
+
+				tcpResponse.Body.CopyTo(responseMemory);
+
+				if (closedToken.IsCancellationRequested)
+				{
+					return;
+				}
+
+				writer.Advance(totalBytes);
+				await writer.FlushAsync();
 
 #if DEBUG
-			_logger.LogDebug(
-				"outputMemory {0} bytes ({1} bytes requested)",
-				outputMemory.Span.Length,
-				totalBytes
-			);
+				_logger.LogDebug(
+					"outputMemory {0} bytes ({1} bytes requested)",
+					responseMemory.Span.Length,
+					totalBytes
+				);
 #endif
+			}
+			catch (OperationCanceledException)
+			{
+				// Perform any cleanup, if needed.
+			}
+			finally
+			{
+				//Thread currentThread = Thread.CurrentThread;
+				//_logger.LogInformation($"backgroundSendServiceAsync-END ({nameof(backgroundSendServiceAsync)}): {(string.IsNullOrWhiteSpace(currentThread.Name) ? currentThread.ManagedThreadId.ToString() : currentThread.Name)}");
+			}
 		}
 
 		#endregion
