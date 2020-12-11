@@ -17,14 +17,12 @@ namespace WebApplication
 		/// <param name="serviceType"></param>
 		/// <param name="remoteIpAddress"></param>
 		/// <param name="seqNum"></param>
-		/// <param name="authorization"></param>
 		/// <param name="rawRequest"></param>
 		/// <param name="request"></param>
 		public AcmeRequest(
 			string serviceType,
 			IPAddress remoteIpAddress,
 			int? seqNum,
-			AcmeAuthorization authorization,
 			string rawRequest,
 			XmlRequestAcmeRequest request
 		)
@@ -32,7 +30,6 @@ namespace WebApplication
 			ServiceType = serviceType;
 			RemoteIpAddress = remoteIpAddress;
 			SeqNum = seqNum;
-			Authorization = authorization;
 
 			RawRequest = rawRequest;
 			RawMethod = request.Method;
@@ -46,9 +43,6 @@ namespace WebApplication
 		#endregion
 
 		#region Public Properties
-
-		/// <summary>Gets the authorization.</summary>
-		public AcmeAuthorization Authorization { get; protected set; }
 
 		/// <summary>The array of keys to lookup.</summary>
 		public string[]? Keys { get; protected set; }

@@ -21,10 +21,6 @@ namespace WebApplication
 		#region Elements
 
 		/// <summary></summary>
-		[XmlElement("encrypt-type")]
-		public string? EncryptType { get; set; }
-
-		/// <summary></summary>
 		[XmlElement("request")]
 		public XmlRequestAcmeRequest? Request { get; set; }
 

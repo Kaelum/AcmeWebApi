@@ -80,8 +80,6 @@ namespace WebApplication
 
 					_logger.Info("ACME API (RUNNING)");
 
-					ApiProcessor.IsReady = true;
-
 					Console.WriteLine("Press <ESC> to exit...");
 
 					bool quit = false;
@@ -95,8 +93,6 @@ namespace WebApplication
 							quit = (Console.ReadKey(true).Key == ConsoleKey.Escape);
 						}
 					}
-
-					ApiProcessor.IsReady = false;
 
 					try
 					{
@@ -155,9 +151,8 @@ namespace WebApplication
 		{
 			try
 			{
-				services
-					.AddSingleton<AcmeSerialization>()
-					.AddSingleton<ApiProcessor>();
+				//services
+				//	.AddSingleton<AcmeSerialization>();
 			}
 			catch (Exception ex)
 			{
