@@ -9,6 +9,8 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml;
+using System.Xml.Serialization;
 
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Logging;
@@ -21,6 +23,11 @@ namespace WebApplication
 	[ExcludeFromCodeCoverage]
 	public class TcpHandler : ConnectionHandler
 	{
+		/// <summary>The Acme XML processing instruction name.</summary>
+		public const string ProcessingInstructionName = "Acme";
+		/// <summary>The Acme XML processing instruction text.</summary>
+		public const string ProcessingInstructionText = "version=acme/1.1";
+
 		private const string HTTP_REQUEST_HEADER_BEGIN_1 = "GET ";
 		private const string HTTP_REQUEST_HEADER_BEGIN_2 = "POST ";
 		private const string HTTP_REQUEST_HEADER_END = "HTTP/1.1\r\n";
@@ -31,7 +38,7 @@ namespace WebApplication
 		private const int MAX_REQUEST_OVERHEAD_SIZE = 2048;
 		private const int MAX_URI_SIZE = 2048;
 
-		private const string HTTP_RESPONSE_FORMAT = "HTTP/1.1 {0} {1}\r\nContent-Type: {2}\r\nContent-Length: {3}\r\nServer: acme.com\r\nConnection: Keep-Alive\r\n\r\n";
+		private const string HTTP_RESPONSE_HEADER = "HTTP/1.1 {0} {1}\r\nContent-Type: {2}\r\nContent-Length: {3}\r\nServer: acme.com\r\nConnection: Keep-Alive\r\n\r\n";
 
 		private static readonly byte[] _httpRequestHeaderBegin1Bytes = Encoding.UTF8.GetBytes(HTTP_REQUEST_HEADER_BEGIN_1);
 		private static readonly byte[] _httpRequestHeaderBegin2Bytes = Encoding.UTF8.GetBytes(HTTP_REQUEST_HEADER_BEGIN_2);
@@ -45,6 +52,24 @@ namespace WebApplication
 
 		private readonly ILogger<TcpHandler> _logger;
 		private readonly ApplicationSettings _applicationSettings;
+
+		// This object removes the default namespaces created by the XmlSerializer.
+		private static readonly XmlSerializerNamespaces _xmlnsEmpty = new XmlSerializerNamespaces(
+			new XmlQualifiedName[] {
+				new XmlQualifiedName(string.Empty, string.Empty),
+			}
+		);
+
+		private static readonly XmlWriterSettings _xmlWriterSettings = new XmlWriterSettings
+		{
+			Async = true,
+			ConformanceLevel = ConformanceLevel.Document,// Fragment has a bug that requires a work-around.
+			OmitXmlDeclaration = true,
+			Encoding = new UTF8Encoding(false),
+			NamespaceHandling = NamespaceHandling.OmitDuplicates,
+			//Indent = true,
+			//IndentChars = "\t",
+		};
 
 		private class ReadBufferResult
 		{
@@ -338,7 +363,7 @@ namespace WebApplication
 						if (readPosition == null) { continue; }
 
 						string xmlPayloadString = Encoding.UTF8.GetString(buffer, 0, (int)bufferStream.Length);
-						byte[] response = Encoding.UTF8.GetBytes(xmlPayloadString);
+						byte[] response = await CreateResponseAsync();
 
 						HttpResult httpResult = new HttpResult(
 							HttpStatusCode.OK,
@@ -371,6 +396,27 @@ namespace WebApplication
 
 		#region Private Methods
 
+		private async Task<byte[]> CreateResponseAsync()
+		{
+			using (MemoryStream memoryStream = new MemoryStream())
+			using (XmlWriter xmlWriter = XmlWriter.Create(memoryStream, _xmlWriterSettings))
+			{
+				xmlWriter.WriteProcessingInstruction(ProcessingInstructionName, ProcessingInstructionText);
+				await xmlWriter.WriteStartElementAsync(null, "acme", null);
+
+				await xmlWriter.WriteStartElementAsync(null, "response", null);
+
+				await xmlWriter.WriteEndElementAsync(); // response
+
+				await xmlWriter.WriteEndElementAsync(); // acme
+
+				await xmlWriter.FlushAsync();
+				memoryStream.Seek(0L, SeekOrigin.Begin);
+
+				return memoryStream.ToArray();
+			}
+		}
+
 		private async Task SendResponseAsync(
 			PipeWriter writer,
 			HttpResult httpResult,
@@ -393,7 +439,7 @@ namespace WebApplication
 				if (sendHttpheader)
 				{
 					string httpResponseHeader = string.Format(
-						HTTP_RESPONSE_FORMAT,
+						HTTP_RESPONSE_HEADER,
 						httpResult.HttpStatusCode.ToString("D"),
 						HttpStatusDescription.Get(httpResult.HttpStatusCode),
 						httpResult.ContentType,
