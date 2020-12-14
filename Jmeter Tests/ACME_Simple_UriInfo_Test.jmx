@@ -17,59 +17,9 @@
             <stringProp name="Argument.value">${__P(port)}</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
-          <elementProp name="uid" elementType="Argument">
-            <stringProp name="Argument.name">uid</stringProp>
-            <stringProp name="Argument.value">001</stringProp>
-            <stringProp name="Argument.metadata">=</stringProp>
-          </elementProp>
-          <elementProp name="productid" elementType="Argument">
-            <stringProp name="Argument.name">productid</stringProp>
-            <stringProp name="Argument.value">device</stringProp>
-            <stringProp name="Argument.metadata">=</stringProp>
-          </elementProp>
-          <elementProp name="oemid" elementType="Argument">
-            <stringProp name="Argument.name">oemid</stringProp>
-            <stringProp name="Argument.value">oem</stringProp>
-            <stringProp name="Argument.metadata">=</stringProp>
-          </elementProp>
           <elementProp name="In 40M File" elementType="Argument">
             <stringProp name="Argument.name">In 40M File</stringProp>
             <stringProp name="Argument.value">C:\Users\Administrator\Desktop\Sample Data For Jmeter\in40.txt</stringProp>
-            <stringProp name="Argument.metadata">=</stringProp>
-          </elementProp>
-          <elementProp name="Not in 40M File" elementType="Argument">
-            <stringProp name="Argument.name">Not in 40M File</stringProp>
-            <stringProp name="Argument.value">C:\Users\Administrator\Desktop\Sample Data For Jmeter\notin40.txt</stringProp>
-            <stringProp name="Argument.metadata">=</stringProp>
-          </elementProp>
-          <elementProp name="Subdomains File" elementType="Argument">
-            <stringProp name="Argument.name">Subdomains File</stringProp>
-            <stringProp name="Argument.value">C:\Users\Administrator\Desktop\Sample Data For Jmeter\7subdomains.csv</stringProp>
-            <stringProp name="Argument.metadata">=</stringProp>
-          </elementProp>
-          <elementProp name="1M File" elementType="Argument">
-            <stringProp name="Argument.name">1M File</stringProp>
-            <stringProp name="Argument.value">C:\Users\Administrator\Desktop\Sample Data For Jmeter\path_urls.txt</stringProp>
-            <stringProp name="Argument.metadata">=</stringProp>
-          </elementProp>
-          <elementProp name="In 40M File_Batch" elementType="Argument">
-            <stringProp name="Argument.name">In 40M File_Batch</stringProp>
-            <stringProp name="Argument.value">C:\Users\Administrator\Desktop\Sample Data For Jmeter\in40_batch.txt</stringProp>
-            <stringProp name="Argument.metadata">=</stringProp>
-          </elementProp>
-          <elementProp name="Not in 40M File_Batch" elementType="Argument">
-            <stringProp name="Argument.name">Not in 40M File_Batch</stringProp>
-            <stringProp name="Argument.value">C:\Users\Administrator\Desktop\Sample Data For Jmeter\notin40_batch.txt</stringProp>
-            <stringProp name="Argument.metadata">=</stringProp>
-          </elementProp>
-          <elementProp name="Subdomains URLs File_Batch" elementType="Argument">
-            <stringProp name="Argument.name">Subdomains URLs File_Batch</stringProp>
-            <stringProp name="Argument.value">C:\Users\Administrator\Desktop\Sample Data For Jmeter\7subdomains_batch.txt</stringProp>
-            <stringProp name="Argument.metadata">=</stringProp>
-          </elementProp>
-          <elementProp name="1M File_Batch" elementType="Argument">
-            <stringProp name="Argument.name">1M File_Batch</stringProp>
-            <stringProp name="Argument.value">C:\Users\Administrator\Desktop\Sample Data For Jmeter\path_urls_batch.txt</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
         </collectionProp>
@@ -103,18 +53,6 @@
           <stringProp name="variableNames">in40</stringProp>
         </CSVDataSet>
         <hashTree/>
-        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Not in 40M File" enabled="true">
-          <stringProp name="delimiter">\n</stringProp>
-          <stringProp name="fileEncoding">UTF-8</stringProp>
-          <stringProp name="filename">${Not in 40M File}</stringProp>
-          <boolProp name="ignoreFirstLine">false</boolProp>
-          <boolProp name="quotedData">false</boolProp>
-          <boolProp name="recycle">true</boolProp>
-          <stringProp name="shareMode">shareMode.group</stringProp>
-          <boolProp name="stopThread">false</boolProp>
-          <stringProp name="variableNames">notin40</stringProp>
-        </CSVDataSet>
-        <hashTree/>
         <ConstantThroughputTimer guiclass="TestBeanGUI" testclass="ConstantThroughputTimer" testname="Constant Throughput Timer" enabled="true">
           <stringProp name="throughput">${__P(throughput)}</stringProp>
           <intProp name="calcMode">2</intProp>
@@ -131,9 +69,6 @@
     &lt;seqnum&gt;493476&lt;/seqnum&gt;&#xd;
     &lt;request&gt;&#xd;
         &lt;method&gt;uriinfo&lt;/method&gt;&#xd;
-        &lt;uid&gt;${uid}&lt;/uid&gt;&#xd;
-        &lt;productid&gt;${productid}&lt;/productid&gt;&#xd;
-        &lt;oemid&gt;${oemid}&lt;/oemid&gt;&#xd;
         &lt;uri&gt;${in40}/${__RandomString(12,abcdefghijklmnopqrstuvwxyz,)}?${__RandomString(10,abcdefghijklmnopqrstuvwxyz,)}&lt;/uri&gt;&#xd;
     &lt;/request&gt;&#xd;
 &lt;/acme&gt;</stringProp>
