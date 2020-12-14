@@ -29,13 +29,5 @@ namespace WebApplication
 		public string? SeqNum { get; set; }
 
 		#endregion
-
-		#region Out-of-band Element
-
-		/// <summary></summary>
-		[XmlText]
-		public string? OutOfBandString { get; set; }
-
-		#endregion
 	}
 }

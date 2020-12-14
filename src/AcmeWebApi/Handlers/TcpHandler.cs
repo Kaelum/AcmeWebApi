@@ -60,6 +60,14 @@ namespace WebApplication
 			}
 		);
 
+		private static readonly XmlReaderSettings _xmlReaderSettings = new XmlReaderSettings
+		{
+			Async = true,
+			ConformanceLevel = ConformanceLevel.Document,
+			CloseInput = false,
+			CheckCharacters = true,
+		};
+
 		private static readonly XmlWriterSettings _xmlWriterSettings = new XmlWriterSettings
 		{
 			Async = true,
@@ -175,6 +183,7 @@ namespace WebApplication
 				int beginRequestMatch2Index = 0;
 				int endRequestMatchIndex = 0;
 
+				// Span<T> objects can't be declared inside async methods; therfore, this method can't be async.
 				ReadBufferResult? parseReadBuffer(MemoryStream requestStream, ReadOnlySequence<byte> buffer)
 				{
 					long bytesRead = 0;
@@ -186,9 +195,7 @@ namespace WebApplication
 
 					foreach (ReadOnlyMemory<byte> segment in buffer)
 					{
-						ReadOnlySpan<byte> span = segment.Span;
-
-						foreach (byte currentByte in span)
+						foreach (byte currentByte in segment.Span)
 						{
 							bytesRead++;
 
@@ -362,8 +369,23 @@ namespace WebApplication
 
 						if (readPosition == null) { continue; }
 
-						string xmlPayloadString = Encoding.UTF8.GetString(buffer, 0, (int)bufferStream.Length);
-						byte[] response = await CreateResponseAsync();
+						//string xmlPayloadString = Encoding.UTF8.GetString(buffer, 0, (int)bufferStream.Length);
+						bufferStream.Seek(0L, SeekOrigin.Begin);
+						XmlRequestAcme xmlRequestAcme;
+
+						using (StreamReader bufferReader = new StreamReader(bufferStream, Encoding.UTF8, leaveOpen: true))
+						{
+							xmlRequestAcme = (XmlRequestAcme)XmlRequestAcme.XmlSerializer.Deserialize(bufferReader);
+						}
+
+						// Attempt to force the SlowHeartbeat messages by repeatedly calling an
+						// async method.
+						for (int i = 0; i < 300; i++)
+						{
+							await CreateResponseAsync(xmlRequestAcme);
+						}
+
+						byte[] response = await CreateResponseAsync(xmlRequestAcme);
 
 						HttpResult httpResult = new HttpResult(
 							HttpStatusCode.OK,
@@ -396,7 +418,7 @@ namespace WebApplication
 
 		#region Private Methods
 
-		private async Task<byte[]> CreateResponseAsync()
+		private async Task<byte[]> CreateResponseAsync(XmlRequestAcme xmlRequestAcme)
 		{
 			using (MemoryStream memoryStream = new MemoryStream())
 			using (XmlWriter xmlWriter = XmlWriter.Create(memoryStream, _xmlWriterSettings))
@@ -404,7 +426,12 @@ namespace WebApplication
 				xmlWriter.WriteProcessingInstruction(ProcessingInstructionName, ProcessingInstructionText);
 				await xmlWriter.WriteStartElementAsync(null, "acme", null);
 
+				await xmlWriter.WriteElementStringAsync(null, "seqnum", null, xmlRequestAcme.SeqNum);
+
 				await xmlWriter.WriteStartElementAsync(null, "response", null);
+
+				await xmlWriter.WriteElementStringAsync(null, "method", null, xmlRequestAcme.Request?.Method);
+				await xmlWriter.WriteElementStringAsync(null, "uri", null, xmlRequestAcme.Request?.Uri);
 
 				await xmlWriter.WriteEndElementAsync(); // response
 

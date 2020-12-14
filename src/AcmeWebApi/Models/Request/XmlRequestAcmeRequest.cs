@@ -33,24 +33,9 @@ namespace WebApplication
 		[XmlElement("method")]
 		public string? Method { get; set; }
 
-		/// <summary>Gets or sets the OEM identifier.</summary>
-		[Required]
-		[XmlElement("oemid")]
-		public string? OemId { get; set; }
-
-		/// <summary>Gets for sets the product (a.k.a. device) identifier.</summary>
-		[Required]
-		[XmlElement("productid")]
-		public string? ProductId { get; set; }
-
 		/// <summary>Gets or sets the array of URIs.</summary>
 		[XmlElement("uri")]
 		public string? Uri { get; set; }
-
-		/// <summary>Gets or sets the unique identifier.</summary>
-		[Required]
-		[XmlElement("uid")]
-		public string? UniqueId { get; set; }
 
 		#endregion
 	}
